@@ -334,6 +334,20 @@
   }
 
   // ── wewe-rss tRPC 同步 ────────────────────────────
+  async function trpcCall(serverUrl, headers, procedure, input) {
+    // tRPC mutation 必须用 POST
+    const resp = await fetch(`${serverUrl}/trpc/${procedure}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ json: JSON.stringify(input) }),
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new Error(`${procedure} 失败: ${resp.status} ${text}`);
+    }
+    return resp.json().catch(() => ({}));
+  }
+
   async function syncToWeweRss() {
     const serverUrl = panel.querySelector('#wx-mp-server').value.trim().replace(/\/+$/, '');
     const authCode = panel.querySelector('#wx-mp-auth').value.trim();
@@ -349,56 +363,45 @@
       return;
     }
 
-    const headers = {
-      'Content-Type': 'application/json',
-    };
-    if (authCode) {
-      headers['authorization'] = authCode;
-    }
+    const headers = { 'Content-Type': 'application/json' };
+    if (authCode) { headers['authorization'] = authCode; }
 
     let feedOk = 0, feedFail = 0;
     let articleOk = 0, articleFail = 0;
 
+    showToast('⏳ 同步中...', 60000);
+
     // 1. 同步 feeds（公众号）
     for (const feed of data.feeds) {
       try {
-        const resp = await fetch(`${serverUrl}/trpc/feed.add?input=${encodeURIComponent(JSON.stringify({ json: feed }))}`, {
-          method: 'GET',
-          headers,
-        });
-        if (resp.ok) { feedOk++; }
-        else { feedFail++; console.error('[MP收集器] feed.add 失败:', feed.mpName, resp.status); }
+        await trpcCall(serverUrl, headers, 'feed.add', feed);
+        feedOk++;
+        console.log(`[MP收集器] feed.add 成功: ${feed.mpName}`);
       } catch (e) {
         feedFail++;
         console.error('[MP收集器] feed.add 错误:', feed.mpName, e);
       }
     }
 
-    // 2. 同步 articles（文章），每批10篇
-    const BATCH = 10;
-    for (let i = 0; i < data.articles.length; i += BATCH) {
-      const batch = data.articles.slice(i, i + BATCH);
-      for (const article of batch) {
-        try {
-          const resp = await fetch(`${serverUrl}/trpc/article.add?input=${encodeURIComponent(JSON.stringify({ json: article }))}`, {
-            method: 'GET',
-            headers,
-          });
-          if (resp.ok) { articleOk++; }
-          else { articleFail++; }
-        } catch (e) {
-          articleFail++;
-          console.error('[MP收集器] article.add 错误:', article.title, e);
-        }
+    // 2. 先删除旧文章再重新写入（确保 picUrl 被更新）
+    //    upsert 的 update 会覆盖 picUrl，但先删再写更干净
+    for (const article of data.articles) {
+      try {
+        // 先尝试删除旧记录
+        await trpcCall(serverUrl, headers, 'article.delete', article.id).catch(() => {});
+        // 再写入新记录（含代理后的 picUrl）
+        await trpcCall(serverUrl, headers, 'article.add', article);
+        articleOk++;
+      } catch (e) {
+        articleFail++;
+        console.error('[MP收集器] article.add 错误:', article.title, e);
       }
-      // 批次间短暂延迟
-      if (i + BATCH < data.articles.length) {
-        await new Promise(r => setTimeout(r, 200));
-      }
+      // 每篇间隔 50ms，避免请求过快
+      await new Promise(r => setTimeout(r, 50));
     }
 
     const msg = `同步完成！公众号 ${feedOk}/${data.feeds.length}，文章 ${articleOk}/${data.articles.length}`;
-    showToast(msg, 3000);
+    showToast(msg, 4000);
     console.log(`[MP收集器] ${msg}`, feedFail > 0 ? `feed失败${feedFail}` : '', articleFail > 0 ? `article失败${articleFail}` : '');
   }
 
