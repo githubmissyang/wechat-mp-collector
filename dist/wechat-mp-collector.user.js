@@ -490,7 +490,12 @@
       z-index: 999999; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
       font-size: 14px; color: #333; overflow: hidden; transition: all 0.3s ease;
     }
-    #wx-mp-collector-panel.collapsed { width: 52px; max-height: 52px; border-radius: 26px; overflow: hidden; }
+    #wx-mp-collector-panel.collapsed { width: auto; max-height: 48px; border-radius: 24px; overflow: visible; }
+    #wx-mp-collector-panel.collapsed .wx-mp-header { border-radius: 24px; padding: 10px 14px; }
+    #wx-mp-collector-panel.collapsed .wx-mp-header .title { font-size: 0; }
+    #wx-mp-collector-panel.collapsed .wx-mp-header .title::after { content: '📋'; font-size: 18px; }
+    #wx-mp-collector-panel.collapsed .wx-mp-header .badge { display: none; }
+    #wx-mp-collector-panel.collapsed > *:not(.wx-mp-header) { display: none; }
     .wx-mp-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: linear-gradient(135deg, #07c160, #06ad56); color: #fff; cursor: move; user-select: none; }
     .wx-mp-header .title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
     .wx-mp-header .badge { background: rgba(255,255,255,0.3); border-radius: 10px; padding: 1px 8px; font-size: 12px; font-weight: normal; }
@@ -607,7 +612,8 @@
       window.open('https://mp.weixin.qq.com/mp/profile_ext?action=home&__biz=MzIwNDM0NjUyNA==', '_blank');
     });
 
-    panel.querySelector('#wx-mp-toggle').addEventListener('click', () => {
+    panel.querySelector('#wx-mp-toggle').addEventListener('click', (e) => {
+      e.stopPropagation();
       panel.classList.toggle('collapsed');
       panel.querySelector('#wx-mp-toggle').textContent = panel.classList.contains('collapsed') ? '+' : '−';
     });
