@@ -10,6 +10,8 @@
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
 // @grant        GM_openInTab
+// @grant        GM_xmlhttpRequest
+// @connect      *
 // @run-at       document-idle
 // @license      MIT
 // @homepageURL  https://github.com/githubmissyang/wechat-mp-collector
@@ -334,18 +336,44 @@
   }
 
   // ── wewe-rss tRPC 同步 ────────────────────────────
-  async function trpcCall(serverUrl, headers, procedure, input) {
-    // tRPC mutation 必须用 POST
-    const resp = await fetch(`${serverUrl}/trpc/${procedure}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ json: JSON.stringify(input) }),
+  // 用 GM_xmlhttpRequest 绕过 CORS（脚本在 mp.weixin.qq.com，wewe-rss 在别的域名）
+  function gmFetch(url, options) {
+    return new Promise((resolve, reject) => {
+      if (typeof GM_xmlhttpRequest === 'undefined') {
+        // 降级到普通 fetch（同域时可用）
+        fetch(url, options).then(resolve).catch(reject);
+        return;
+      }
+      GM_xmlhttpRequest({
+        method: options.method || 'GET',
+        url: url,
+        headers: options.headers || {},
+        data: options.body || undefined,
+        responseType: 'json',
+        onload: (resp) => {
+          if (resp.status >= 200 && resp.status < 300) {
+            try { resolve({ ok: true, status: resp.status, data: typeof resp.response === 'string' ? JSON.parse(resp.response) : resp.response }); }
+            catch (e) { resolve({ ok: true, status: resp.status, data: resp.responseText }); }
+          } else {
+            reject(new Error(`HTTP ${resp.status}: ${resp.responseText?.slice(0, 200)}`));
+          }
+        },
+        onerror: (err) => { reject(new Error('网络请求失败: ' + (err.statusText || err.error || 'unknown'))); },
+        ontimeout: () => { reject(new Error('请求超时')); },
+      });
     });
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => '');
-      throw new Error(`${procedure} 失败: ${resp.status} ${text}`);
-    }
-    return resp.json().catch(() => ({}));
+  }
+
+  async function trpcCall(serverUrl, authCode, procedure, input) {
+    const url = `${serverUrl}/trpc/${procedure}`;
+    const headers = { 'Content-Type': 'application/json' };
+    if (authCode) { headers['authorization'] = authCode; }
+
+    // tRPC POST body 格式: { "json": "{\"id\":\"xxx\",...}" }
+    const body = JSON.stringify({ json: JSON.stringify(input) });
+
+    const resp = await gmFetch(url, { method: 'POST', headers, body });
+    return resp;
   }
 
   async function syncToWeweRss() {
@@ -363,45 +391,49 @@
       return;
     }
 
-    const headers = { 'Content-Type': 'application/json' };
-    if (authCode) { headers['authorization'] = authCode; }
-
     let feedOk = 0, feedFail = 0;
     let articleOk = 0, articleFail = 0;
 
-    showToast('⏳ 同步中...', 60000);
+    showToast('⏳ 同步中，请稍候...', 60000);
+    statusText.textContent = '同步中 0%';
 
     // 1. 同步 feeds（公众号）
     for (const feed of data.feeds) {
       try {
-        await trpcCall(serverUrl, headers, 'feed.add', feed);
+        await trpcCall(serverUrl, authCode, 'feed.add', feed);
         feedOk++;
         console.log(`[MP收集器] feed.add 成功: ${feed.mpName}`);
       } catch (e) {
         feedFail++;
-        console.error('[MP收集器] feed.add 错误:', feed.mpName, e);
+        console.error('[MP收集器] feed.add 错误:', feed.mpName, e.message);
       }
     }
 
-    // 2. 先删除旧文章再重新写入（确保 picUrl 被更新）
-    //    upsert 的 update 会覆盖 picUrl，但先删再写更干净
-    for (const article of data.articles) {
+    // 2. 先删除旧文章再重新写入（确保 picUrl 被更新为代理地址）
+    const total = data.articles.length;
+    for (let i = 0; i < total; i++) {
+      const article = data.articles[i];
       try {
-        // 先尝试删除旧记录
-        await trpcCall(serverUrl, headers, 'article.delete', article.id).catch(() => {});
-        // 再写入新记录（含代理后的 picUrl）
-        await trpcCall(serverUrl, headers, 'article.add', article);
+        // 先删除旧记录（忽略错误，可能不存在）
+        await trpcCall(serverUrl, authCode, 'article.delete', article.id).catch(() => {});
+        // 写入新记录（含代理后的 picUrl）
+        await trpcCall(serverUrl, authCode, 'article.add', article);
         articleOk++;
       } catch (e) {
         articleFail++;
-        console.error('[MP收集器] article.add 错误:', article.title, e);
+        console.error('[MP收集器] article.add 错误:', article.title, e.message);
       }
-      // 每篇间隔 50ms，避免请求过快
-      await new Promise(r => setTimeout(r, 50));
+      // 更新进度
+      if (i % 5 === 0 || i === total - 1) {
+        statusText.textContent = `同步中 ${Math.round((i + 1) / total * 100)}%`;
+      }
+      // 每篇间隔 80ms，避免请求过快
+      await new Promise(r => setTimeout(r, 80));
     }
 
-    const msg = `同步完成！公众号 ${feedOk}/${data.feeds.length}，文章 ${articleOk}/${data.articles.length}`;
+    const msg = `同步完成！公众号 ${feedOk}/${data.feeds.length}，文章 ${articleOk}/${total}`;
     showToast(msg, 4000);
+    statusText.textContent = '同步完成';
     console.log(`[MP收集器] ${msg}`, feedFail > 0 ? `feed失败${feedFail}` : '', articleFail > 0 ? `article失败${articleFail}` : '');
   }
 
