@@ -264,12 +264,36 @@
     const groups = exportGroupedByMp();
     const result = { feeds: [], articles: [] };
     for (const [biz, group] of Object.entries(groups)) {
-      result.feeds.push({ id: group.mpInfo.mpId || biz, mpName: group.mpInfo.mpName, mpCover: group.mpInfo.mpCover, mpIntro: group.mpInfo.mpIntro });
+      result.feeds.push({ id: group.mpInfo.mpId || biz, mpName: group.mpInfo.mpName, mpCover: proxyImgUrl(group.mpInfo.mpCover), mpIntro: group.mpInfo.mpIntro });
       for (const a of group.articles) {
-        result.articles.push({ id: a.id, mpId: a.mpId || biz, title: a.title, picUrl: a.picUrl, publishTime: a.publishTime });
+        result.articles.push({ id: a.id, mpId: a.mpId || biz, title: a.title, picUrl: proxyImgUrl(a.picUrl), publishTime: a.publishTime });
       }
     }
     return result;
+  }
+
+  /**
+   * 微信图片防盗链代理
+   * 将 mmbiz.qpic.cn / mmbiz.qlogo.cn 的 URL 替换为代理地址
+   * 需要在 Nginx 配置图片代理（见 README）
+   */
+  function proxyImgUrl(url) {
+    if (!url) return '';
+    const proxyPrefix = getImgProxyPrefix();
+    if (!proxyPrefix) return url;
+    // 匹配微信图片域名
+    const wxImgMatch = url.match(/^https?:\/\/(mmbiz\.qpic\.cn|mmbiz\.qlogo\.cn|wx\.qlogo\.cn|thirdwx\.qlogo\.cn)(\/.+)/);
+    if (wxImgMatch) {
+      const domain = wxImgMatch[1];
+      const path = wxImgMatch[2];
+      return proxyPrefix.replace(/\/+$/, '') + '/' + domain + path;
+    }
+    return url;
+  }
+
+  function getImgProxyPrefix() {
+    const input = document.getElementById('wx-mp-img-proxy');
+    return input ? input.value.trim() : '';
   }
 
   function exportAsCsv() {
@@ -576,6 +600,7 @@
       <div class="wx-mp-settings" id="wx-mp-settings">
         <label>wewe-rss 地址: <input type="text" id="wx-mp-server" placeholder="http://localhost:4000" value="http://localhost:4000"></label>
         <label>Auth Code: <input type="text" id="wx-mp-auth" placeholder="留空则不需要认证"></label>
+        <label>图片代理前缀: <input type="text" id="wx-mp-img-proxy" placeholder="如 https://你的域名/wx-img 留空则不代理" value=""></label>
       </div>
       <div class="wx-mp-article-list" id="wx-mp-list"></div>
       <div class="wx-mp-status">
