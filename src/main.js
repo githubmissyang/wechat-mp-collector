@@ -1,20 +1,24 @@
 // ==UserScript==
-// @name         微信公众号文章收集器
-// @namespace    https://github.com/wechat-mp-collector
-// @version      1.0.0
-// @description  在公众号后台自动收集文章链接、标题、缩略图，支持导出 wewe-rss 兼容格式
-// @author       MP Collector
+// @name         微信公众号文章链接批量收集器
+// @namespace    https://github.com/githubmissyang/wechat-mp-collector
+// @version      1.1.0
+// @description  在公众号后台批量收集文章链接、标题、缩略图，支持自动翻页，导出 wewe-rss 兼容格式 | By AI架构师之路
+// @author       AI架构师之路
 // @match        https://mp.weixin.qq.com/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
+// @grant        GM_openInTab
 // @run-at       document-idle
 // @license      MIT
+// @homepageURL  https://github.com/githubmissyang/wechat-mp-collector
+// @supportURL   https://github.com/githubmissyang/wechat-mp-collector/issues
 // ==/UserScript==
 
 /**
- * 微信公众号文章收集器
+ * 微信公众号文章链接批量收集器
+ * 由「AI架构师之路」出品
  *
  * 使用方法：
  * 1. 登录微信公众号后台 (mp.weixin.qq.com)
@@ -451,6 +455,13 @@
     .wx-mp-settings label { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666; margin-bottom: 6px; }
     .wx-mp-settings input[type="text"] { flex: 1; padding: 4px 8px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 12px; }
     .wx-mp-settings input[type="text"]:focus { border-color: #07c160; outline: none; }
+    .wx-mp-promo { padding: 12px 16px; border-bottom: 1px solid #f0f0f0; background: linear-gradient(135deg, #f6ffed, #e6f7ff); display: flex; align-items: center; gap: 12px; cursor: pointer; transition: background 0.2s; }
+    .wx-mp-promo:hover { background: linear-gradient(135deg, #d9f7be, #bae7ff); }
+    .wx-mp-promo .promo-avatar { width: 42px; height: 42px; border-radius: 8px; flex-shrink: 0; background: #07c160; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 18px; font-weight: bold; }
+    .wx-mp-promo .promo-info { flex: 1; min-width: 0; }
+    .wx-mp-promo .promo-info .promo-name { font-size: 14px; font-weight: 600; color: #333; }
+    .wx-mp-promo .promo-info .promo-desc { font-size: 11px; color: #888; margin-top: 2px; line-height: 1.4; }
+    .wx-mp-promo .promo-arrow { color: #07c160; font-size: 16px; flex-shrink: 0; }
   `;
 
   let panel, listContainer, statusDot, countBadge, statusText, toastEl;
@@ -465,8 +476,16 @@
     panel.id = 'wx-mp-collector-panel';
     panel.innerHTML = `
       <div class="wx-mp-header">
-        <div class="title">📋 MP收集器 <span class="badge" id="wx-mp-count">${getArticleCount()}</span></div>
+        <div class="title">📋 文章链接批量收集器 <span class="badge" id="wx-mp-count">${getArticleCount()}</span></div>
         <button class="toggle-btn" id="wx-mp-toggle" title="折叠/展开">−</button>
+      </div>
+      <div class="wx-mp-promo" id="wx-mp-promo" title="关注 AI架构师之路">
+        <div class="promo-avatar">AI</div>
+        <div class="promo-info">
+          <div class="promo-name">AI架构师之路</div>
+          <div class="promo-desc">聚焦 AI 前沿技术与架构实践，分享实用工具与深度洞察</div>
+        </div>
+        <span class="promo-arrow">›</span>
       </div>
       <div class="wx-mp-toolbar" id="wx-mp-toolbar">
         <button class="primary" id="wx-mp-btn-collect">▶ 开始监听</button>
@@ -513,6 +532,11 @@
   }
 
   function bindEvents() {
+    // 宣传区点击 — 打开公众号文章
+    panel.querySelector('#wx-mp-promo').addEventListener('click', () => {
+      window.open('https://mp.weixin.qq.com/mp/profile_ext?action=home&__biz=MzIwNDM0NjUyNA==', '_blank');
+    });
+
     panel.querySelector('#wx-mp-toggle').addEventListener('click', () => {
       panel.classList.toggle('collapsed');
       panel.querySelector('#wx-mp-toggle').textContent = panel.classList.contains('collapsed') ? '+' : '−';
