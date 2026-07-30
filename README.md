@@ -76,6 +76,48 @@
 | CSV 导出 | 通用格式，含 BOM 头，Excel 直接打开无乱码 |
 | 拖拽面板 | 可拖动、可折叠 |
 
+## 图片防盗链配置
+
+微信图片（`mmbiz.qpic.cn`、`mmbiz.qlogo.cn`）会检查 Referer，非微信来源会返回「此图片来自微信公众平台」占位图。需要在 Nginx 配置图片代理。
+
+### 1Panel / Nginx 配置
+
+在 wewe-rss 对应网站的 Nginx 配置中，`server { }` 块内添加：
+
+```nginx
+# 微信图片反防盗链代理
+location ~* ^/wx-img/(mmbiz\.qpic\.cn|mmbiz\.qlogo\.cn|wx\.qlogo\.cn|thirdwx\.qlogo\.cn)/(.*)$ {
+    set $wx_domain $1;
+    set $wx_path $2;
+    proxy_pass https://$wx_domain/$wx_path;
+    proxy_set_header Referer "https://mp.weixin.qq.com/";
+    proxy_set_header Host $wx_domain;
+    proxy_ssl_server_name on;
+    proxy_cache_valid 200 7d;
+    add_header Access-Control-Allow-Origin *;
+}
+```
+
+### 脚本配置
+
+在面板的「图片代理前缀」填入：`https://你的域名/wx-img`
+
+例如你的 wewe-rss 访问地址是 `https://rss.example.com`，则填：
+```
+https://rss.example.com/wx-img
+```
+
+脚本会自动将图片 URL 从：
+```
+https://mmbiz.qpic.cn/mmbiz_png/xxx/0?wx_fmt=png
+```
+转换为：
+```
+https://rss.example.com/wx-img/mmbiz.qpic.cn/mmbiz_png/xxx/0?wx_fmt=png
+```
+
+Nginx 代理时会带上 `Referer: https://mp.weixin.qq.com/`，微信服务器就会返回真实图片。
+
 ## 关于
 
 **AI架构师之路** — 聚焦 AI 前沿技术与架构实践，分享实用工具与深度洞察。
