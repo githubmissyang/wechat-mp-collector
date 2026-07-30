@@ -309,6 +309,75 @@
     }
   }
 
+  // ── wewe-rss tRPC 同步 ────────────────────────────
+  async function syncToWeweRss() {
+    const serverUrl = panel.querySelector('#wx-mp-server').value.trim().replace(/\/+$/, '');
+    const authCode = panel.querySelector('#wx-mp-auth').value.trim();
+
+    if (!serverUrl) {
+      showToast('❌ 请填写 wewe-rss 地址');
+      return;
+    }
+
+    const data = exportAsWeweRssJson();
+    if (data.feeds.length === 0) {
+      showToast('❌ 没有数据可同步');
+      return;
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    if (authCode) {
+      headers['authorization'] = authCode;
+    }
+
+    let feedOk = 0, feedFail = 0;
+    let articleOk = 0, articleFail = 0;
+
+    // 1. 同步 feeds（公众号）
+    for (const feed of data.feeds) {
+      try {
+        const resp = await fetch(`${serverUrl}/trpc/feed.add?input=${encodeURIComponent(JSON.stringify({ json: feed }))}`, {
+          method: 'GET',
+          headers,
+        });
+        if (resp.ok) { feedOk++; }
+        else { feedFail++; console.error('[MP收集器] feed.add 失败:', feed.mpName, resp.status); }
+      } catch (e) {
+        feedFail++;
+        console.error('[MP收集器] feed.add 错误:', feed.mpName, e);
+      }
+    }
+
+    // 2. 同步 articles（文章），每批10篇
+    const BATCH = 10;
+    for (let i = 0; i < data.articles.length; i += BATCH) {
+      const batch = data.articles.slice(i, i + BATCH);
+      for (const article of batch) {
+        try {
+          const resp = await fetch(`${serverUrl}/trpc/article.add?input=${encodeURIComponent(JSON.stringify({ json: article }))}`, {
+            method: 'GET',
+            headers,
+          });
+          if (resp.ok) { articleOk++; }
+          else { articleFail++; }
+        } catch (e) {
+          articleFail++;
+          console.error('[MP收集器] article.add 错误:', article.title, e);
+        }
+      }
+      // 批次间短暂延迟
+      if (i + BATCH < data.articles.length) {
+        await new Promise(r => setTimeout(r, 200));
+      }
+    }
+
+    const msg = `同步完成！公众号 ${feedOk}/${data.feeds.length}，文章 ${articleOk}/${data.articles.length}`;
+    showToast(msg, 3000);
+    console.log(`[MP收集器] ${msg}`, feedFail > 0 ? `feed失败${feedFail}` : '', articleFail > 0 ? `article失败${articleFail}` : '');
+  }
+
   // ── Observer ──────────────────────────────────────
   let observer = null;
   let isCollecting = false;
@@ -493,7 +562,8 @@
         <button id="wx-mp-btn-page">📄 自动翻页</button>
       </div>
       <div class="wx-mp-toolbar">
-        <button id="wx-mp-btn-json">📦 wewe-rss</button>
+        <button class="primary" id="wx-mp-btn-sync">🚀 同步到wewe-rss</button>
+        <button id="wx-mp-btn-json">📦 下载JSON</button>
         <button id="wx-mp-btn-copy">📋 复制JSON</button>
         <button id="wx-mp-btn-csv">📊 CSV</button>
         <button class="danger" id="wx-mp-btn-clear">🗑️ 清空</button>
@@ -578,6 +648,16 @@
       this.textContent = '📄 自动翻页';
       statusText.textContent = '翻页完成';
       showToast(`翻页完成，共 ${getArticleCount()} 篇`);
+    });
+
+    panel.querySelector('#wx-mp-btn-sync').addEventListener('click', async function () {
+      this.disabled = true;
+      this.textContent = '⏳ 同步中...';
+      statusText.textContent = '正在同步到 wewe-rss...';
+      await syncToWeweRss();
+      this.disabled = false;
+      this.textContent = '🚀 同步到wewe-rss';
+      statusText.textContent = '同步完成';
     });
 
     panel.querySelector('#wx-mp-btn-json').addEventListener('click', () => {
